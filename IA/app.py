@@ -6,70 +6,21 @@ from services.product_recommender import ProductRecommender
 
 app = FastAPI(
     title="MercadoLocal-IA Microservice",
-    description="Microservicio de Inteligencia Artificial para precios, demanda y recomendaciones.",
-    version="1.0.0"
+    description="Microservicio de Inteligencia Artificial compatible 100% con Spring Boot.",
+    version="2.0.0"
 )
 
 # ===============================
-# 🔹 Cargar servicios IA (TUS MODELOS)
+# 🔹 Cargar tus modelos IA reales
 # ===============================
 price_optimizer = PriceOptimizer()
 demand_predictor = DemandPredictor()
 product_recommender = ProductRecommender()
 
 # ===============================
-# 🔹 MODELOS DE REQUEST ORIGINALES
+# 🔹 MODELOS COMPATIBLES CON SPRING BOOT
 # ===============================
 
-class PriceRequest(BaseModel):
-    categoria: float
-    precio_actual: float
-    stock: float
-    ventas_historicas: float
-
-
-class DemandRequest(BaseModel):
-    mes: float
-    ventas_pasadas: float
-    tendencia: float
-
-
-class RecommendationRequest(BaseModel):
-    features: list
-
-
-# ===============================
-# 🔹 ENDPOINTS ORIGINALES (NO TOCA NADA)
-# ===============================
-
-@app.post("/predict_price")
-def predict_price(request: PriceRequest):
-    data = request.dict()
-    resultado = price_optimizer.predict_price(data)
-    return {"precio_sugerido": resultado}
-
-
-@app.post("/predict_demand")
-def predict_demand(request: DemandRequest):
-    data = request.dict()
-    resultado = demand_predictor.predict(data)
-    return {"demanda_predicha": resultado}
-
-
-@app.post("/recommend_products")
-def recommend_products(request: RecommendationRequest):
-    features = request.features
-    resultado = product_recommender.recommend(features)
-    return {"productos_recomendados": resultado}
-
-
-# =======================================================================================
-# 🔥🔥🔥 NUEVOS ENDPOINTS COMPATIBLES CON SPRING BOOT (ADAPTADORES)
-# =======================================================================================
-
-# ---------------------------------------------------------
-# 1️⃣ PRECIO SUGERIDO (Versión que Spring Boot llama)
-# ---------------------------------------------------------
 class PrecioSugeridoSpring(BaseModel):
     idProducto: int
     precioActual: float
@@ -78,12 +29,22 @@ class PrecioSugeridoSpring(BaseModel):
     ventasUltimos30Dias: float
 
 
+class DemandaSpring(BaseModel):
+    idProducto: int
+    horizonteDias: float
+    ventasUltimos30Dias: float
+    stockActual: float
+
+
+# ===============================
+# 🔥🔥🔥 ENDPOINT: PRECIO SUGERIDO (Mismo DTO que Spring)
+# ===============================
 @app.post("/precio-sugerido")
 def precio_sugerido_spring(request: PrecioSugeridoSpring):
 
-    # Adaptar los campos al formato esperado por tu modelo IA
+    # Adaptar tu formato → a lo que tu modelo IA espera
     data = {
-        "categoria": request.idProducto,              # si tu modelo usa categoría real, cambiar aquí
+        "categoria": request.idProducto,     # campo adaptado
         "precio_actual": request.precioActual,
         "stock": request.stockActual,
         "ventas_historicas": request.ventasUltimos30Dias
@@ -98,23 +59,16 @@ def precio_sugerido_spring(request: PrecioSugeridoSpring):
     }
 
 
-# ---------------------------------------------------------
-# 2️⃣ PREDICCIÓN DE DEMANDA (Versión que Spring Boot llama)
-# ---------------------------------------------------------
-class DemandaSpring(BaseModel):
-    idProducto: int
-    horizonteDias: float
-    ventasUltimos30Dias: float
-    stockActual: float
-
-
+# ===============================
+# 🔥🔥🔥 ENDPOINT: DEMANDA (Mismo DTO que Spring)
+# ===============================
 @app.post("/prediccion-demanda")
 def prediccion_demanda_spring(request: DemandaSpring):
 
     data = {
-        "mes": request.horizonteDias,           # en tu modelo X_demand son 3 columnas: mes, ventas_pasadas, tendencia
+        "mes": request.horizonteDias,
         "ventas_pasadas": request.ventasUltimos30Dias,
-        "tendencia": 1.0                         # valor por defecto
+        "tendencia": 1.0     # Valor por defecto para tu modelo
     }
 
     demanda = demand_predictor.predict(data)
@@ -130,8 +84,45 @@ def prediccion_demanda_spring(request: DemandaSpring):
 
 
 # ===============================
-# 🔹 ENDPOINT DE PRUEBA
+# 🔹 Tus ENDPOINTS ORIGINALES (NO se tocaron)
+# ===============================
+class PriceRequest(BaseModel):
+    categoria: float
+    precio_actual: float
+    stock: float
+    ventas_historicas: float
+
+
+@app.post("/predict_price")
+def predict_price(request: PriceRequest):
+    data = request.dict()
+    return {"precio_sugerido": price_optimizer.predict_price(data)}
+
+
+class DemandRequest(BaseModel):
+    mes: float
+    ventas_pasadas: float
+    tendencia: float
+
+
+@app.post("/predict_demand")
+def predict_demand(request: DemandRequest):
+    data = request.dict()
+    return {"demanda_predicha": demand_predictor.predict(data)}
+
+
+class RecommendationRequest(BaseModel):
+    features: list
+
+
+@app.post("/recommend_products")
+def recommend_products(request: RecommendationRequest):
+    return {"productos_recomendados": product_recommender.recommend(request.features)}
+
+
+# ===============================
+# 🔹 ENDPOINT raíz
 # ===============================
 @app.get("/")
 def home():
-    return {"message": "Microservicio IA funcionando correctamente 🚀"}
+    return {"message": "Microservicio IA funcionando correctamente"}
