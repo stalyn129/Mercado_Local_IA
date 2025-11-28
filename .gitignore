@@ -1,0 +1,25 @@
+# Modelos entrenados (muy pesados)
+models/ml_models/*.pkl
+models/ml_models/*.h5
+models/ml_models/*.joblib
+
+# Caché de Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Entorno virtual
+venv/
+env/
+
+# Variables de entorno
+.env
+
+# Logs
+*.log
+
+# Data temporal
+data/temp/
+*.csv
