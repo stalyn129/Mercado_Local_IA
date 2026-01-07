@@ -1,119 +1,44 @@
-import os
-import requests
+from models.db_models import Producto # Importamos el modelo de tu DB
+from sqlalchemy.orm import Session
+from services.ollama_service import OllamaService
 
-from services.chat_session import save_message, get_history
-from services.product_service import buscar_producto_seguro
-from services.intent_detector import detectar_intencion
-from services.security_filter import evaluar_peligrosidad
+class ChatbotService:
+    def __init__(self, db: Session):
+        self.ai = OllamaService()
+        self.db = db
 
-# ===============================
-# ⚙️ CONFIGURACIÓN
-# ===============================
-OLLAMA_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
+    async def handle_request(self, message: str, id_rol: int, id_usuario: int):
+        # 1. BUSCAR DATOS REALES DE TU BASE DE DATOS
+        # Vamos a traer los productos de este vendedor específico
+        productos_reales = self.db.query(Producto).filter(Producto.id_vendedor == id_usuario).all()
+        
+        # Convertimos los productos a una lista de texto que la IA entienda
+        lista_productos = ""
+        for p in productos_reales:
+            lista_productos += f"- {p.nombre_producto}: Precio ${p.precio_producto}, Stock: {p.stock_producto}\n"
 
-# ===============================
-# 🤖 CHATBOT IA FINAL
-# ===============================
-def ask_chatbot(user_id: int, rol: str, mensaje: str):
+        # 2. SELECCIÓN DE PROMPT (Inyectando los productos reales)
+        if id_rol == 2:
+            system_context = self._get_vendedor_context(id_usuario, lista_productos)
+        else:
+            system_context = self._get_consumidor_context(lista_productos)
 
-    # =====================================================
-    # 1️⃣ FILTRO DE SEGURIDAD
-    # =====================================================
-    bloqueo = evaluar_peligrosidad(mensaje)
-    if bloqueo:
-        return {
-            "respuesta": "Lo siento, no puedo proporcionar ese tipo de información."
-        }
+        # 3. ENVIAR A OLLAMA
+        response = await self.ai.generate_response(message, system_context)
+        return response
 
-    # =====================================================
-    # 2️⃣ DETECTAR INTENCIÓN
-    # =====================================================
-    intent = detectar_intencion(mensaje)
-
-    # =====================================================
-    # 3️⃣ BUSCAR PRODUCTOS (SI APLICA)
-    # =====================================================
-    contexto = ""
-    productos_encontrados = []
-
-    if intent in ["precio", "stock", "producto", "recomendacion"]:
-        productos_encontrados = buscar_producto_seguro(mensaje)
-
-        if productos_encontrados:
-            contexto += "🛒 **Productos disponibles:**\n\n"
-            for p in productos_encontrados:
-                contexto += (
-                    f"- **{p['nombre']}**\n"
-                    f"  💰 Precio: ${p['precio']}\n"
-                    f"  📦 Stock: {p['stock']}\n"
-                    f"  👉 Ver producto: {p['link']}\n\n"
-                )
-
-    # =====================================================
-    # 4️⃣ PROMPT CONTROLADO (ANTI-ALUCINACIÓN)
-    # =====================================================
-    prompt = f"""
-Eres un asistente virtual de MercadoLocal-IA.
-
-REGLAS ESTRICTAS:
-- NO inventes datos
-- SOLO usa la información del CONTEXTO
-- NO muestres información interna
-- Si no tienes datos suficientes, dilo claramente
-- Si hay productos, menciona SIEMPRE el link para ver/comprar
-
-ROL DEL USUARIO: {rol}
-
-CONTEXTO:
-{contexto if contexto else "No hay productos relacionados."}
-
-PREGUNTA DEL USUARIO:
-{mensaje}
-
-Responde de forma clara, breve, amigable y orientada a ayudar a comprar.
-"""
-
-    # =====================================================
-    # 5️⃣ HISTORIAL
-    # =====================================================
-    historial = get_history(user_id)
-
-    messages = (
-        [{"role": "system", "content": "Asistente de comercio local seguro"}]
-        + historial
-        + [{"role": "user", "content": prompt}]
-    )
-
-    # =====================================================
-    # 6️⃣ LLAMADA A OLLAMA
-    # =====================================================
-    try:
-        response = requests.post(
-            f"{OLLAMA_URL}/api/chat",
-            json={
-                "model": MODEL,
-                "messages": messages,
-                "stream": False
-            },
-            timeout=30
+    def _get_vendedor_context(self, id_vendedor: int, productos: str) -> str:
+        return (
+            f"Eres MercadoBot Pro. El vendedor ID {id_vendedor} tiene estos productos REALES:\n"
+            f"{productos}\n"
+            "Usa SOLO estos productos para tus respuestas. Si no tiene productos, dile que debe agregar stock."
+            "Responde en el JSON que definimos antes."
         )
-        response.raise_for_status()
-
-        texto_respuesta = response.json()["message"]["content"]
-
-        # =====================================================
-        # 7️⃣ GUARDAR HISTORIAL
-        # =====================================================
-        save_message(user_id, rol, mensaje, texto_respuesta)
-
-        return {
-            "respuesta": texto_respuesta,
-            "productos": productos_encontrados  # 👈 útil para frontend
-        }
-
-    except Exception as e:
-        return {
-            "respuesta": "Lo siento, ocurrió un error al procesar tu mensaje.",
-            "error": str(e)
-        }
+    
+    def _get_consumidor_context(self, productos: str) -> str:
+        return (
+            f"Eres MercadoBot. Los productos disponibles en la tienda son:\n"
+            f"{productos}\n"
+            "Recomienda solo lo que ves en la lista anterior."
+            "Responde en el JSON de consumidor."
+        )

@@ -1,19 +1,28 @@
-# core/database.py
-import os
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
-from dotenv import load_dotenv
+from sqlalchemy import create_engine, MetaData
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+from core.config import settings
 
-load_dotenv()
+# Usamos la URL que definimos en settings
+SQLALCHEMY_DATABASE_URL = settings.DATABASE_URL
 
-DATABASE_URL = os.getenv("DATABASE_URL", "mysql+pymysql://root:@localhost/mercado_local_ia")
-
+# Crear el motor de conexión
+# pool_pre_ping ayuda a reconectar si MariaDB cierra la conexión por inactividad
 engine = create_engine(
-    DATABASE_URL,
-    pool_pre_ping=True,
-    future=True
+    SQLALCHEMY_DATABASE_URL, 
+    pool_pre_ping=True
 )
 
+# Crear la fábrica de sesiones
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+# Clase base para los modelos
 Base = declarative_base()
+
+# Función para obtener la base de datos en las rutas
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
