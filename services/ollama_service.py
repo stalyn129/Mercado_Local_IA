@@ -83,4 +83,4 @@ class OllamaService:
                 response = await client.get(f"{self.base_url}/api/tags")
                 return response.status_code == 200
         except:
-            return False
+            return False    

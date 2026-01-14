@@ -2,30 +2,46 @@ from models.db_models import Producto # Importamos el modelo de tu DB
 from sqlalchemy.orm import Session
 from services.ollama_service import OllamaService
 
+historiales_activos = {}
+
 class ChatbotService:
     def __init__(self, db: Session):
         self.ai = OllamaService()
         self.db = db
 
-    async def handle_request(self, message: str, id_rol: int, id_usuario: int):
-        # 1. BUSCAR DATOS REALES DE TU BASE DE DATOS
-        # Vamos a traer los productos de este vendedor específico
-        productos_reales = self.db.query(Producto).filter(Producto.id_vendedor == id_usuario).all()
+    async def handle_request(self, message: str, rol: str, id_usuario: int):
+        # 1. Creamos el historial para el usuario si no existe
+        if id_usuario not in historiales_activos:
+            historiales_activos[id_usuario] = []
         
-        # Convertimos los productos a una lista de texto que la IA entienda
-        lista_productos = ""
-        for p in productos_reales:
-            lista_productos += f"- {p.nombre_producto}: Precio ${p.precio_producto}, Stock: {p.stock_producto}\n"
+        # 2. Obtenemos los productos reales (Tu lógica actual)
+        productos_reales = self.db.query(Producto).filter(Producto.id_vendedor == id_usuario).all()
+        lista_productos = "\n".join([f"- {p.nombre_producto}: ${p.precio_producto}" for p in productos_reales])
 
-        # 2. SELECCIÓN DE PROMPT (Inyectando los productos reales)
-        if id_rol == 2:
-            system_context = self._get_vendedor_context(id_usuario, lista_productos)
+        # 3. Definimos el System Prompt según el ROL que llega de Java
+        # IMPORTANTE: Usamos 'rol' como String porque así lo envía tu IAClientService.java
+        if rol == "VENDEDOR":
+            contexto = f"Eres MercadoBot Pro. Ayudas al vendedor ID {id_usuario}. Sus productos: {lista_productos}"
         else:
-            system_context = self._get_consumidor_context(lista_productos)
+            contexto = f"Eres MercadoBot. Ayudas al cliente. Productos disponibles: {lista_productos}"
 
-        # 3. ENVIAR A OLLAMA
-        response = await self.ai.generate_response(message, system_context)
-        return response
+        # 4. Construimos la memoria para la IA
+        mensajes_para_ollama = [{"role": "system", "content": contexto}]
+        
+        # Agregamos los últimos mensajes de ESTE usuario específico
+        mensajes_para_ollama.extend(historiales_activos[id_usuario][-6:]) # Últimos 6 mensajes
+        
+        # Agregamos el mensaje nuevo
+        mensajes_para_ollama.append({"role": "user", "content": message})
+
+        # 5. Llamamos a la IA
+        respuesta = await self.ai.generate_response(mensajes_para_ollama)
+
+        # 6. GUARDAMOS en el historial de ESTE usuario
+        historiales_activos[id_usuario].append({"role": "user", "content": message})
+        historiales_activos[id_usuario].append({"role": "assistant", "content": respuesta})
+
+        return respuesta
 
     def _get_vendedor_context(self, id_vendedor: int, productos: str) -> str:
         return (

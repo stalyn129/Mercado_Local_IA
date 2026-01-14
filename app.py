@@ -2,13 +2,15 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-# Importación de configuraciones y rutas
+# Importación de configuraciones y base de datos
 from core.config import settings
 from core.database import engine, Base
-from api.routes import auth_routes, inventory_routes, chat_routes, order_routes
 
-# Crear las tablas en MariaDB si no existen
-# Nota: Esto usa las definiciones de db_models.py
+# Importación de rutas existentes
+from api.routes import auth_routes, inventory_routes, chat_routes, order_routes, ia_routes
+
+# Crear las tablas en la base de datos si no existen
+# Esto asegura que 'productos' esté disponible para la IA
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
@@ -17,16 +19,17 @@ app = FastAPI(
 )
 
 # --- CONFIGURACIÓN DE CORS ---
-# Permite que tu Frontend (React, Vue, etc.) se comunique con esta API
+# Crucial para que React y Spring Boot puedan consultar este microservicio
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS,
+    allow_origins=["*"], # En desarrollo puedes usar settings.ALLOWED_ORIGINS
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # --- REGISTRO DE RUTAS (ENDPOINTS) ---
+
 # RF-01: Autenticación y Perfiles
 app.include_router(auth_routes.router, prefix="/api/auth", tags=["Autenticación"])
 
@@ -36,8 +39,12 @@ app.include_router(inventory_routes.router, prefix="/api/inventory", tags=["Inve
 # RF-04 y RF-05: Gestión de Pedidos y Ventas
 app.include_router(order_routes.router, prefix="/api/orders", tags=["Pedidos"])
 
-# RF-06 y RF-07: Chatbot con IA (Análisis y Recomendación)
-app.include_router(chat_routes.router, prefix="/api/ia", tags=["Inteligencia Artificial"])
+# RF-06 y RF-07: Módulo de IA - Recomendación de Precios y Predicciones
+# Este es el router que tu IAClientService en Java está buscando
+app.include_router(ia_routes.router, prefix="/api/ia", tags=["IA - Precios"])
+
+# Chatbot con IA
+app.include_router(chat_routes.router, prefix="/api/chat", tags=["IA - Chatbot"])
 
 @app.get("/")
 async def root():
@@ -49,5 +56,5 @@ async def root():
 
 # --- INICIO DEL SERVIDOR ---
 if __name__ == "__main__":
-    # Ejecuta el servidor en el puerto 8000
+    # Se ejecuta en el puerto 8000 para coincidir con la IA_URL de tu Java
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
